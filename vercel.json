@@ -1,7 +1,7 @@
 {
   "crons": [
     {
-      "path": "/api/alerts/dispatch?secret=hshsshueiwiw888900077492'2''2930eeeee66666",
+      "path": "/api/alerts/dispatch",
       "schedule": "*/2 * * * *"
     }
   ]
