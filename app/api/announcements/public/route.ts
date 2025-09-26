@@ -53,123 +53,113 @@ export async function GET(request: NextRequest) {
     
     console.log("[v0] Fetching public announcements for external carta application")
 
-    const { searchParams } = new URL(request.url)
-    const language = searchParams.get("lang") || "es" // Soporte para idiomas
-    const type = searchParams.get("type") // Filtrar por tipo específico
-    const activeOnly = searchParams.get("active_only") !== "false" // Por defecto solo activos
 
-    const supabase = createServerSupabaseClient()
-
-    // Construir query base
-    /*antes
-    let query = supabase.from("announcements").select("*")
- 
-    // Filtrar solo anuncios activos si se solicita
-    if (activeOnly) {
-      query = query.eq("is_active", true)
-    }*/
-       let query = supabase.from("announcements_visible_now").select("*")
- 
-    // Filtrar por tipo si se especifica
-    if (type) {
-      query = query.eq("type", type)
-    }
-
-    // Filtrar por fechas válidas
-    const now = new Date().toISOString()
-    query = query.or(`start_date.is.null,start_date.lte.${now}`).or(`end_date.is.null,end_date.gte.${now}`)
-
-    // Ordenar por prioridad y fecha
-    query = query.order("priority", { ascending: false }).order("created_at", { ascending: false })
-
-    const { data: announcements, error } = await query
-
-    if (error) {
-      console.error("Error fetching public announcements:", error)
-      return NextResponse.json({ error: "Error fetching announcements" }, { status: 500 })
-    }
-
-    const scheduledAnnouncements = announcements?.filter(isAlertScheduledToShow) || []
-
-    // Preparar anuncios para respuesta externa
-    const publicAnnouncements =
-      scheduledAnnouncements?.map((announcement) => {
-        // Manejar traducciones si están disponibles
-        let title = announcement.title
-        let content = announcement.content
-
-        if (language !== "es" && announcement.title_translations) {
-          try {
-            const titleTranslations = JSON.parse(announcement.title_translations)
-            title = titleTranslations[language] || announcement.title
-          } catch (e) {
-            // Usar título original si hay error en traducción
-          }
-        }
-
-        if (language !== "es" && announcement.content_translations) {
-          try {
-            const contentTranslations = JSON.parse(announcement.content_translations)
-            content = contentTranslations[language] || announcement.content
-          } catch (e) {
-            // Usar contenido original si hay error en traducción
-          }
-        }
-
-        return {
-          id: announcement.id,
-          title,
-          content,
-          type: announcement.type || "general",
-          priority: announcement.priority || 1,
-          start_date: announcement.start_date,
-          end_date: announcement.end_date,
-          created_at: announcement.created_at,
-          alert_days: announcement.alert_days, // Array de días de la semana para alertas
-          alert_time: announcement.alert_time, // Hora específica para alertas
-          // No incluir campos internos como is_active, translations, etc.
-        }
-      }) || []
-
-    // Agrupar por tipo para mejor organización
-    const groupedByType: Record<string, any[]> = {}
-    publicAnnouncements.forEach((announcement) => {
-      const announcementType = announcement.type
-      if (!groupedByType[announcementType]) {
-        groupedByType[announcementType] = []
+        /*****/
+      // Parámetros
+      const { searchParams } = new URL(request.url)
+      const language = searchParams.get("lang") || "es"
+      const type = searchParams.get("type")
+      const activeOnly = searchParams.get("active_only") !== "false" // ya no se usa con la vista, pero lo preservo por metadata
+      const v = searchParams.get("v") // solo para cache-busting en CDN (no se usa en servidor)
+      
+      const supabase = createServerSupabaseClient()
+      
+      // 1) Leer versión/meta ANTES de armar respuesta y headers
+      const { data: meta, error: metaErr } = await supabase
+        .from("announcements_meta")
+        .select("version, updated_at")
+        .eq("id", 1)
+        .single()
+      const version = meta?.version ?? 1
+      
+      // 2) Leer desde la VISTA (ya filtra activos/fechas/ventanas)
+      let query = supabase.from("announcements_visible_now").select("*")
+      if (type) {
+        query = query.eq("type", type)
       }
-      groupedByType[announcementType].push(announcement)
-    })
+      
+      const { data: announcements, error } = await query
+      if (error) {
+        console.error("Error fetching public announcements:", error)
+        return NextResponse.json({ error: "Error fetching announcements" }, { status: 500 })
+      }
+      
+      // 3) Filtro de ventana de alerta (si sigues usando esta lógica en cliente)
+      const scheduledAnnouncements = announcements?.filter(isAlertScheduledToShow) || []
+      
+      // 4) Mapear a payload público
+      const publicAnnouncements =
+        scheduledAnnouncements?.map((a) => {
+          // Traducciones
+          let title = a.title
+          let content = a.content
+          if (language !== "es" && a.title_translations) {
+            try {
+              const tt = typeof a.title_translations === "string" ? JSON.parse(a.title_translations) : a.title_translations
+              title = tt?.[language] || a.title
+            } catch {}
+          }
+          if (language !== "es" && a.content_translations) {
+            try {
+              const ct = typeof a.content_translations === "string" ? JSON.parse(a.content_translations) : a.content_translations
+              content = ct?.[language] || a.content
+            } catch {}
+          }
+      
+          // Tu esquema usa schedule_days/start_time: expónlos con los nombres que espera la carta
+          return {
+            id: a.id,
+            title,
+            content,
+            type: a.type || "general",
+            priority: a.priority || 1,
+            start_date: a.start_date,
+            end_date: a.end_date,
+            created_at: a.created_at,
+            alert_days: a.alert_days ?? a.schedule_days ?? null,   // <- adapta nombres
+            alert_time: a.alert_time ?? (a.start_time ? String(a.start_time).slice(0, 5) : null), // HH:MM
+          }
+        }) || []
+      
+      // 5) Agrupar por tipo (igual que antes)
+      const groupedByType: Record<string, any[]> = {}
+      publicAnnouncements.forEach((ann) => {
+        const t = ann.type
+        if (!groupedByType[t]) groupedByType[t] = []
+        groupedByType[t].push(ann)
+      })
+      
+      // 6) Respuesta con version en metadata
+      const response = {
+        success: true,
+        announcements: publicAnnouncements,
+        grouped_by_type: groupedByType,
+        metadata: {
+          total_count: publicAnnouncements.length,
+          total_before_scheduling: announcements?.length || 0,
+          filtered_by_scheduling: (announcements?.length || 0) - publicAnnouncements.length,
+          language,
+          filter_type: type || "all",
+          active_only: activeOnly,
+          last_updated: meta?.updated_at ?? new Date().toISOString(),
+          api_version: "1.0",
+          version, // 👈 NUEVO
+        },
+      }
+      
+      // 7) Headers de caché + CORS + revalidación condicional
+      const headers = {
+        "Cache-Control": "public, max-age=180, s-maxage=300, stale-while-revalidate=3600",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Last-Modified": (meta?.updated_at ?? new Date().toISOString()),
+      }
+      
+      return NextResponse.json(response, { headers })
 
-    const response = {
-      success: true,
-      announcements: publicAnnouncements,
-      grouped_by_type: groupedByType,
-      metadata: {
-        total_count: publicAnnouncements.length,
-        total_before_scheduling: announcements?.length || 0,
-        filtered_by_scheduling: (announcements?.length || 0) - publicAnnouncements.length,
-        language,
-        filter_type: type || "all",
-        active_only: activeOnly,
-        last_updated: new Date().toISOString(),
-        api_version: "1.0",
-      },
-    }
 
-    console.log(
-      `[v0] Public announcements fetched successfully: ${publicAnnouncements.length} announcements (${response.metadata.filtered_by_scheduling} filtered by scheduling)`,
-    )
-
-    // Headers para cacheo y CORS
-    const headers = {
-      "Cache-Control": "public, max-age=180, s-maxage=300", // Cache 3min cliente, 5min CDN (más frecuente que menú)
-      "Access-Control-Allow-Origin": "*", // Permitir acceso desde aplicación externa
-      "Access-Control-Allow-Methods": "GET, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-    }
-
-    return NextResponse.json(response, { headers })
+    
   } catch (error) {
     console.error("Unexpected error fetching public announcements:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
