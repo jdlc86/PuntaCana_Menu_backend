@@ -50,6 +50,7 @@ function isAlertScheduledToShow(announcement: any): boolean {
 // GET - Endpoint público para anuncios en la aplicación de carta del cliente
 export async function GET(request: NextRequest) {
   try {
+    
     console.log("[v0] Fetching public announcements for external carta application")
 
     const { searchParams } = new URL(request.url)
