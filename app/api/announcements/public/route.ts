@@ -60,13 +60,15 @@ export async function GET(request: NextRequest) {
     const supabase = createServerSupabaseClient()
 
     // Construir query base
+    /*antes
     let query = supabase.from("announcements").select("*")
-
+ 
     // Filtrar solo anuncios activos si se solicita
     if (activeOnly) {
       query = query.eq("is_active", true)
-    }
-
+    }*/
+       let query = supabase.from("announcements_visible_now").select("*")
+ 
     // Filtrar por tipo si se especifica
     if (type) {
       query = query.eq("type", type)
