@@ -32,7 +32,20 @@ export async function POST(request: NextRequest) {
     const supabase = createAdminClient()
 
     const body = await request.json()
-    const { title, content, type, priority, start_date, end_date, title_translations, content_translations } = body
+    const {
+      title,
+      content,
+      type,
+      priority,
+      start_date,
+      end_date,
+      title_translations,
+      content_translations,
+      is_scheduled,
+      schedule_days,
+      start_time,
+      end_time,
+    } = body
 
     console.log("[v0] Creating new announcement:", { title, type, priority })
 
@@ -49,6 +62,10 @@ export async function POST(request: NextRequest) {
           start_date: start_date || new Date().toISOString(),
           end_date,
           is_active: true,
+          is_scheduled: type === "alert" ? is_scheduled : false,
+          schedule_days: type === "alert" ? schedule_days : null,
+          start_time: type === "alert" ? start_time : null,
+          end_time: type === "alert" ? end_time : null,
         },
       ])
       .select()
@@ -67,3 +84,4 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
+
