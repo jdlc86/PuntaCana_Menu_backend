@@ -1486,30 +1486,40 @@ const AdminPage = () => {
         zh: translations.zh.content,
       }
 
+      const isScheduledAlert =
+        newAnnouncement.type === "alert" &&
+        newAnnouncement.schedule_days.length > 0 &&
+        newAnnouncement.start_time &&
+        newAnnouncement.end_time
+
+      console.log("[v0] newAnnouncement state:", newAnnouncement)
+      console.log("[v0] isScheduledAlert calculation:", isScheduledAlert)
+
+      const announcementData = {
+        title: originalAnnouncement.title, // Only Spanish version
+        content: originalAnnouncement.content, // Only Spanish version
+        title_translations: JSON.stringify(titleTranslations), // All translations
+        content_translations: JSON.stringify(contentTranslations), // All translations
+        type: newAnnouncement.type,
+        priority: Number.parseInt(newAnnouncement.priority),
+        end_date: newAnnouncement.end_date || null,
+        is_active: newAnnouncement.is_active,
+        ...(isScheduledAlert && {
+          is_scheduled: true,
+          schedule_days: newAnnouncement.schedule_days,
+          start_time: newAnnouncement.start_time,
+          end_time: newAnnouncement.end_time,
+        }),
+      }
+
+      console.log("[v0] Publishing announcement with data:", announcementData)
+
       const response = await fetch("/api/announcements", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          title: originalAnnouncement.title, // Only Spanish version
-          content: originalAnnouncement.content, // Only Spanish version
-          title_translations: JSON.stringify(titleTranslations), // All translations
-          content_translations: JSON.stringify(contentTranslations), // All translations
-          type: newAnnouncement.type,
-          priority: Number.parseInt(newAnnouncement.priority),
-          end_date: newAnnouncement.end_date || null,
-          is_active: newAnnouncement.is_active,
-          // Include alert scheduling fields
-          is_scheduled:
-            newAnnouncement.type === "alert" &&
-            newAnnouncement.schedule_days.length > 0 &&
-            newAnnouncement.start_time &&
-            newAnnouncement.end_time,
-          schedule_days: newAnnouncement.type === "alert" ? newAnnouncement.schedule_days : null,
-          start_time: newAnnouncement.type === "alert" ? newAnnouncement.start_time : null,
-          end_time: newAnnouncement.type === "alert" ? newAnnouncement.end_time : null,
-        }),
+        body: JSON.stringify(announcementData),
       })
 
       if (response.ok) {
