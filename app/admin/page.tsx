@@ -1477,9 +1477,21 @@ const AdminPage = () => {
         newAnnouncement.type === "alert" &&
         newAnnouncement.schedule_days.length > 0 &&
         newAnnouncement.start_time &&
-        newAnnouncement.end_time &&
-        newAnnouncement.repeat_every_minutes &&
-        Number.parseInt(newAnnouncement.repeat_every_minutes) >= 10
+        newAnnouncement.end_time
+
+      const intervalValue = newAnnouncement.repeat_every_minutes?.trim()
+      const parsedInterval = intervalValue ? Number.parseInt(intervalValue) : null
+
+      // Validate interval only if provided
+      if (intervalValue && parsedInterval < 10) {
+        toast({
+          title: "Error de validación",
+          description: "El intervalo de alerta debe ser de al menos 10 minutos",
+          variant: "destructive",
+        })
+        setIsPublishing(false)
+        return
+      }
 
       const titleTranslations = {
         es: newAnnouncement.title,
@@ -1503,9 +1515,7 @@ const AdminPage = () => {
           schedule_days: newAnnouncement.schedule_days,
           start_time: newAnnouncement.start_time,
           end_time: newAnnouncement.end_time,
-          repeat_every_minutes: newAnnouncement.repeat_every_minutes
-            ? Number.parseInt(newAnnouncement.repeat_every_minutes)
-            : null,
+          repeat_every_minutes: parsedInterval,
         }),
       }
 
