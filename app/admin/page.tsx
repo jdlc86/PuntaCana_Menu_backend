@@ -71,6 +71,7 @@ interface Announcement {
   start_time?: string | null
   end_time?: string | null
   is_scheduled?: boolean
+  repeat_every_minutes?: number | null // New field for alert interval
 }
 
 interface WaiterCall {
@@ -331,6 +332,7 @@ const AdminPage = () => {
     start_time: "",
     end_time: "",
     is_scheduled: false,
+    repeat_every_minutes: "", // New field for alert interval
   })
 
   const [showTranslationPreview, setShowTranslationPreview] = useState(false)
@@ -1466,54 +1468,57 @@ const AdminPage = () => {
   }
 
   const publishAnnouncement = async () => {
-    if (isPublishing) return
+    console.log("[v0] Starting publishAnnouncement")
 
-    setIsPublishing(true)
+    if (!newAnnouncement.title.trim() || !newAnnouncement.content.trim()) {
+      toast({
+        title: "Error",
+        description: "Por favor completa todos los campos requeridos",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // Validate alert interval for alert type
+    if (newAnnouncement.type === "alert" && newAnnouncement.repeat_every_minutes) {
+      const intervalValue = Number.parseInt(newAnnouncement.repeat_every_minutes)
+      if (intervalValue < 10) {
+        toast({
+          title: "Error de validación",
+          description: "El intervalo de alerta debe ser de al menos 10 minutos",
+          variant: "destructive",
+        })
+        return
+      }
+    }
+
+    const isScheduledAlert =
+      newAnnouncement.type === "alert" &&
+      newAnnouncement.schedule_days.length > 0 &&
+      newAnnouncement.start_time &&
+      newAnnouncement.end_time
+
+    const announcementData = {
+      title: newAnnouncement.title,
+      content: newAnnouncement.content,
+      type: newAnnouncement.type,
+      priority: Number.parseInt(newAnnouncement.priority),
+      title_translations: newAnnouncement.title_translations || null,
+      content_translations: newAnnouncement.content_translations || null,
+      ...(isScheduledAlert && {
+        is_scheduled: true,
+        schedule_days: newAnnouncement.schedule_days,
+        start_time: newAnnouncement.start_time,
+        end_time: newAnnouncement.end_time,
+        repeat_every_minutes: newAnnouncement.repeat_every_minutes
+          ? Number.parseInt(newAnnouncement.repeat_every_minutes)
+          : null,
+      }),
+    }
+
+    console.log("[v0] Announcement data to send:", announcementData)
+
     try {
-      const titleTranslations = {
-        es: originalAnnouncement.title,
-        en: translations.en.title,
-        de: translations.de.title,
-        fr: translations.fr.title,
-        zh: translations.zh.title,
-      }
-
-      const contentTranslations = {
-        es: originalAnnouncement.content,
-        en: translations.en.content,
-        de: translations.de.content,
-        fr: translations.fr.content,
-        zh: translations.zh.content,
-      }
-
-      const isScheduledAlert =
-        newAnnouncement.type === "alert" &&
-        newAnnouncement.schedule_days.length > 0 &&
-        newAnnouncement.start_time &&
-        newAnnouncement.end_time
-
-      console.log("[v0] newAnnouncement state:", newAnnouncement)
-      console.log("[v0] isScheduledAlert calculation:", isScheduledAlert)
-
-      const announcementData = {
-        title: originalAnnouncement.title, // Only Spanish version
-        content: originalAnnouncement.content, // Only Spanish version
-        title_translations: JSON.stringify(titleTranslations), // All translations
-        content_translations: JSON.stringify(contentTranslations), // All translations
-        type: newAnnouncement.type,
-        priority: Number.parseInt(newAnnouncement.priority),
-        end_date: newAnnouncement.end_date || null,
-        is_active: newAnnouncement.is_active,
-        ...(isScheduledAlert && {
-          is_scheduled: true,
-          schedule_days: newAnnouncement.schedule_days,
-          start_time: newAnnouncement.start_time,
-          end_time: newAnnouncement.end_time,
-        }),
-      }
-
-      console.log("[v0] Publishing announcement with data:", announcementData)
-
       const response = await fetch("/api/announcements", {
         method: "POST",
         headers: {
@@ -1522,45 +1527,43 @@ const AdminPage = () => {
         body: JSON.stringify(announcementData),
       })
 
-      if (response.ok) {
-        toast({
-          title: "Éxito",
-          description: "Anuncio publicado correctamente",
-        })
-        setNewAnnouncement({
-          // Corrected setNewAnnouncement usage
-          title: "",
-          content: "",
-          type: "general",
-          priority: "1",
-          end_date: "",
-          is_active: true, // Reset is_active
-          schedule_days: [],
-          start_time: "",
-          end_time: "",
-          is_scheduled: false,
-        })
-        setShowTranslationPreview(false)
-        setTranslations({
-          en: { title: "", content: "" },
-          de: { title: "", content: "" },
-          fr: { title: "", content: "" },
-          zh: { title: "", content: "" },
-        })
-        setOriginalAnnouncement({ title: "", content: "" }) // Reset original announcement
-        fetchData()
-      } else {
-        throw new Error("Error publishing announcement")
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.details || "Error creating announcement")
       }
+
+      const result = await response.json()
+      console.log("[v0] Announcement created successfully:", result)
+
+      toast({
+        title: "Éxito",
+        description: "Anuncio publicado correctamente",
+      })
+
+      // Reset form
+      setNewAnnouncement({
+        title: "",
+        content: "",
+        type: "general",
+        priority: "1",
+        end_date: "",
+        is_active: true,
+        schedule_days: [],
+        start_time: "",
+        end_time: "",
+        is_scheduled: false,
+        repeat_every_minutes: "",
+      })
+
+      // Refresh data
+      fetchData()
     } catch (error) {
-      console.error("Error publishing announcement:", error)
+      console.error("[v0] Error creating announcement:", error)
       toast({
         title: "Error",
-        description: "Error al publicar el anuncio",
+        description: error instanceof Error ? error.message : "Error al crear el anuncio",
         variant: "destructive",
       })
-    } finally {
-      setIsPublishing(false)
     }
   }
 
@@ -4104,6 +4107,45 @@ const AdminPage = () => {
                     </div>
 
                     <div>
+                      <Label htmlFor="alert-interval">Intervalo de alerta (minutos)</Label>
+                      <Input
+                        id="alert-interval"
+                        type="number"
+                        min="10"
+                        placeholder="Mínimo 10 minutos"
+                        value={newAnnouncement.repeat_every_minutes}
+                        onChange={(e) => {
+                          const value = e.target.value
+                          const numValue = Number.parseInt(value)
+
+                          // Show validation error if less than 10
+                          if (value && numValue < 10) {
+                            toast({
+                              title: "Error de validación",
+                              description: "El intervalo de alerta debe ser de al menos 10 minutos",
+                              variant: "destructive",
+                            })
+                            return
+                          }
+
+                          setNewAnnouncement({
+                            ...newAnnouncement,
+                            repeat_every_minutes: value,
+                          })
+                        }}
+                        className={
+                          newAnnouncement.repeat_every_minutes &&
+                          Number.parseInt(newAnnouncement.repeat_every_minutes) < 10
+                            ? "border-red-500"
+                            : ""
+                        }
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Especifica cada cuántos minutos se debe repetir la alerta (mínimo 10 minutos)
+                      </p>
+                    </div>
+
+                    <div>
                       <Label className="text-sm">Días de la semana</Label>
                       <div className="grid grid-cols-2 gap-2 mt-2">
                         {daysOfWeek.map((day) => (
@@ -4161,6 +4203,9 @@ const AdminPage = () => {
                             .map((day) => daysOfWeek.find((d) => d.value === day)?.label)
                             .join(", ")}{" "}
                           de {newAnnouncement.start_time} a {newAnnouncement.end_time}
+                          {newAnnouncement.repeat_every_minutes && (
+                            <span>, repitiéndose cada {newAnnouncement.repeat_every_minutes} minutos</span>
+                          )}
                         </div>
                       )}
                   </div>
@@ -4206,6 +4251,10 @@ const AdminPage = () => {
                             ?.map((day) => daysOfWeek.find((d) => d.value === day)?.label)
                             .join(", ")}{" "}
                           de {announcement.start_time} a {announcement.end_time}
+                          {/* Display repeat interval if available */}
+                          {announcement.repeat_every_minutes && (
+                            <span>, repitiéndose cada {announcement.repeat_every_minutes} minutos</span>
+                          )}
                         </div>
                       )}
 
