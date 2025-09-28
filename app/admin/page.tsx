@@ -49,7 +49,8 @@ const fileToBase64 = (file: File): Promise<string> => {
 const getSpanishContent = (jsonContent: string, fallback = "") => {
   try {
     const parsed = JSON.parse(jsonContent)
-    return parsed.es?.title || parsed.es?.content || fallback
+    // The JSON structure is {"es":"text","en":"text",...} not {"es":{"title":"text"}}
+    return parsed.es || fallback
   } catch {
     return jsonContent || fallback
   }
