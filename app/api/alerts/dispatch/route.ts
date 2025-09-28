@@ -1,5 +1,6 @@
 export const runtime = "nodejs";
-const REPEAT_MINUTES = 3; // hardcodeado: repetir cada 3 min
+const REPEAT_MINUTES = 3; // tiempo minimo entre notofocaciones 3 min
+const CREATE_NEW_TOAST_EACH_BUCKET = false; // false => reemplaza la notificación (un solo toast)
 
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -32,13 +33,16 @@ function currentBucketIsoUtc(stepMinutes = REPEAT_MINUTES, baseDate = new Date()
 }
 
 export async function GET(req: Request) {
-  // Autorizar cron (header). Si quieres soportar query ?secret=..., añade esa validación también.
-  const auth = req.headers.get("authorization");
-  if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  // Autorizar cron: vale header o query (?secret=...)
+  const url = new URL(req.url);
+  const fromQuery = url.searchParams.get("secret");
+  const fromHeader = req.headers.get("authorization");
+  const okHeader = fromHeader === `Bearer ${process.env.CRON_SECRET}`;
+  const okQuery = !!fromQuery && fromQuery === process.env.CRON_SECRET;
+  if (!okHeader && !okQuery) {
     return new NextResponse("Unauthorized", { status: 401 });
   }
 
-  // No cachear este endpoint
   const noStoreHeaders = { "Cache-Control": "no-store" as const };
 
   // 1) Leer alertas visibles ahora (type='alert')
@@ -75,16 +79,19 @@ export async function GET(req: Request) {
   let sent = 0, skipped = 0, failed = 0;
 
   for (const alert of alerts) {
-    // payload: incluye bucket en 'tag' si quieres ver una notificación nueva cada 3 minutos (no reemplazo).
+    const updatedIso = new Date(alert.updated_at).toISOString();
+
+    // Si quieres que se vea una nueva notificación en cada bucket => tag único por bucket.
+    // Si prefieres que "reemplace" la anterior => tag fijo por alerta.
+    const tag = CREATE_NEW_TOAST_EACH_BUCKET ? `alert-${alert.id}-${bucket}` : `alert-${alert.id}`;
+
     const payload = JSON.stringify({
       title: alert.title,
       body: alert.content,
-      tag: `alert-${alert.id}-${bucket}`, // si prefieres reemplazar, usa: `alert-${alert.id}`
+      tag,
       data: { url: "https://TU-FRONT-END/?alert=" + alert.id },
       requireInteraction: true,
     });
-
-    const updatedIso = new Date(alert.updated_at).toISOString();
 
     for (const sub of subs!) {
       // 3) Dedupe por bucket: una vez por suscripción y por (alert, updated_at, bucket)
@@ -106,15 +113,16 @@ export async function GET(req: Request) {
           skipped++;
           continue;
         } else {
-          // error inesperado insertando el log: seguimos best-effort, pero marcamos fail al final si el envío también falla
-          console.warn("[dispatch] push_send_log insert error:", logErr?.code || logErr);
+          console.warn("[dispatch] push_send_log insert error:", (logErr as any).code || logErr);
         }
       }
 
       try {
+        // TTL/urgency: mejora entrega cuando el navegador está en background/cerrado
         await webpush.sendNotification(
           { endpoint: sub.endpoint, keys: { auth: sub.auth, p256dh: sub.p256dh } },
-          payload
+          payload,
+          { TTL: 900, urgency: "high" } // 15 min, prioritaria
         );
         sent++;
 
@@ -153,4 +161,5 @@ export async function GET(req: Request) {
     { headers: noStoreHeaders }
   );
 }
+
 
