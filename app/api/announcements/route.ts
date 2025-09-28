@@ -45,9 +45,19 @@ export async function POST(request: NextRequest) {
       schedule_days,
       start_time,
       end_time,
+      repeat_every_minutes, // Added repeat_every_minutes field
     } = body
 
-    console.log("[v0] Creating new announcement:", { title, type, priority })
+    console.log("[v0] Creating new announcement:", { title, type, priority, repeat_every_minutes })
+
+    if (type === "alert" && repeat_every_minutes !== null && repeat_every_minutes !== undefined) {
+      if (repeat_every_minutes < 10) {
+        return NextResponse.json(
+          { error: "Validation error", details: "Alert interval must be at least 10 minutes" },
+          { status: 400 },
+        )
+      }
+    }
 
     const { data: announcement, error } = await supabase
       .from("announcements")
@@ -66,6 +76,7 @@ export async function POST(request: NextRequest) {
           schedule_days: type === "alert" ? schedule_days : null,
           start_time: type === "alert" ? start_time : null,
           end_time: type === "alert" ? end_time : null,
+          repeat_every_minutes: type === "alert" ? repeat_every_minutes : null, // Added repeat_every_minutes to insert
         },
       ])
       .select()
