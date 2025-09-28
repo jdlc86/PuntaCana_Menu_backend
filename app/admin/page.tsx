@@ -1468,57 +1468,48 @@ const AdminPage = () => {
   }
 
   const publishAnnouncement = async () => {
-    console.log("[v0] Starting publishAnnouncement")
+    if (!validateAnnouncement()) return
 
-    if (!newAnnouncement.title.trim() || !newAnnouncement.content.trim()) {
-      toast({
-        title: "Error",
-        description: "Por favor completa todos los campos requeridos",
-        variant: "destructive",
-      })
-      return
-    }
-
-    // Validate alert interval for alert type
-    if (newAnnouncement.type === "alert" && newAnnouncement.repeat_every_minutes) {
-      const intervalValue = Number.parseInt(newAnnouncement.repeat_every_minutes)
-      if (intervalValue < 10) {
-        toast({
-          title: "Error de validación",
-          description: "El intervalo de alerta debe ser de al menos 10 minutos",
-          variant: "destructive",
-        })
-        return
-      }
-    }
-
-    const isScheduledAlert =
-      newAnnouncement.type === "alert" &&
-      newAnnouncement.schedule_days.length > 0 &&
-      newAnnouncement.start_time &&
-      newAnnouncement.end_time
-
-    const announcementData = {
-      title: newAnnouncement.title,
-      content: newAnnouncement.content,
-      type: newAnnouncement.type,
-      priority: Number.parseInt(newAnnouncement.priority),
-      title_translations: newAnnouncement.title_translations || null,
-      content_translations: newAnnouncement.content_translations || null,
-      ...(isScheduledAlert && {
-        is_scheduled: true,
-        schedule_days: newAnnouncement.schedule_days,
-        start_time: newAnnouncement.start_time,
-        end_time: newAnnouncement.end_time,
-        repeat_every_minutes: newAnnouncement.repeat_every_minutes
-          ? Number.parseInt(newAnnouncement.repeat_every_minutes)
-          : null,
-      }),
-    }
-
-    console.log("[v0] Announcement data to send:", announcementData)
-
+    setIsPublishing(true)
     try {
+      const isScheduledAlert =
+        newAnnouncement.type === "alert" &&
+        newAnnouncement.schedule_days.length > 0 &&
+        newAnnouncement.start_time &&
+        newAnnouncement.end_time &&
+        newAnnouncement.repeat_every_minutes &&
+        Number.parseInt(newAnnouncement.repeat_every_minutes) >= 10
+
+      const titleTranslations = {
+        es: newAnnouncement.title,
+        ...Object.fromEntries(Object.entries(translations).map(([lang, trans]) => [lang, trans.title])),
+      }
+
+      const contentTranslations = {
+        es: newAnnouncement.content,
+        ...Object.fromEntries(Object.entries(translations).map(([lang, trans]) => [lang, trans.content])),
+      }
+
+      const announcementData = {
+        title: newAnnouncement.title,
+        content: newAnnouncement.content,
+        type: newAnnouncement.type,
+        priority: Number.parseInt(newAnnouncement.priority),
+        title_translations: JSON.stringify(titleTranslations),
+        content_translations: JSON.stringify(contentTranslations),
+        ...(isScheduledAlert && {
+          is_scheduled: true,
+          schedule_days: newAnnouncement.schedule_days,
+          start_time: newAnnouncement.start_time,
+          end_time: newAnnouncement.end_time,
+          repeat_every_minutes: newAnnouncement.repeat_every_minutes
+            ? Number.parseInt(newAnnouncement.repeat_every_minutes)
+            : null,
+        }),
+      }
+
+      console.log("[v0] Announcement data to send:", announcementData)
+
       const response = await fetch("/api/announcements", {
         method: "POST",
         headers: {
@@ -1555,6 +1546,16 @@ const AdminPage = () => {
         repeat_every_minutes: "",
       })
 
+      // Clear translations and preview
+      setTranslations({
+        en: { title: "", content: "" },
+        de: { title: "", content: "" },
+        fr: { title: "", content: "" },
+        zh: { title: "", content: "" },
+      })
+      setOriginalAnnouncement({ title: "", content: "" })
+      setShowTranslationPreview(false)
+
       // Refresh data
       fetchData()
     } catch (error) {
@@ -1564,6 +1565,8 @@ const AdminPage = () => {
         description: error instanceof Error ? error.message : "Error al crear el anuncio",
         variant: "destructive",
       })
+    } finally {
+      setIsPublishing(false)
     }
   }
 
