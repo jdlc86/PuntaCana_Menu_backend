@@ -1,5 +1,5 @@
 export const runtime = "nodejs";
-const REPEAT_MINUTES = 3; // tiempo minimo entre notofocaciones 3 min
+const REPEAT_MINUTES = 10; // tiempo minimo entre notificaciones 10 min// este #siempre tiene ques er mayor que e intervalo del cron definido en la razo del proyecto. Ademas esta programado de 8-11 hora de Espama
 const CREATE_NEW_TOAST_EACH_BUCKET = false; // false => reemplaza la notificación (un solo toast)
 
 import { NextResponse } from "next/server";
@@ -161,5 +161,6 @@ export async function GET(req: Request) {
     { headers: noStoreHeaders }
   );
 }
+
 
 
